@@ -1,25 +1,26 @@
 from pprint import pprint
 import json
 from openai import OpenAI
+import os
+from dotenv import load_dotenv
+import requests
+import inspect
+from pydantic import TypeAdapter
 
-# Implement 3 hàm
-
-
-def get_current_weather(location: str, unit: str):
-    """Get the current weather in a given location"""
-    # Hardcoded response for demo purposes
-    return "Trời rét vãi nôi, 7 độ C"
-
-
-def get_stock_price(symbol: str):
-    # Không làm gì cả, để hàm trống
-    pass
-
+load_dotenv()
 
 # Bài 2: Implement hàm `view_website`, sử dụng `requests` và JinaAI để đọc markdown từ URL
 def view_website(url: str):
-    # Không làm gì cả, để hàm trống
-    pass
+    """Convert a webpage to markdown using JinaAI Reader API"""
+    try:
+        # Make request to JinaAI Reader API
+        response = requests.get(f"https://r.jina.ai/{url}")
+        response.raise_for_status()  # Raise exception for bad status codes
+        
+        # Return the markdown content
+        return response.text
+    except requests.RequestException as e:
+        return f"Error fetching website content: {str(e)}"
 
 
 # Bài 1: Thay vì tự viết object `tools`, hãy xem lại bài trước, sửa code và dùng `inspect` và `TypeAdapter` để define `tools`
@@ -27,50 +28,21 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "get_current_weather",
-            "description": "Get the current weather in a given location",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "The city name"
-                    },
-                    "unit": {
-                        "type": "string",
-                        "enum": ["celsius", "fahrenheit"],
-                        "description": "The temperature unit"
-                    }
-                },
-                "required": ["location", "unit"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_stock_price",
-            "description": "Get the current stock price of a given symbol",
-            "parameters": {"type": "object", "properties": {"symbol": {"type": "string"}}, "required": ["symbol"]}
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "view_website",
-            "description": "View a website",
-            "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}
+            "description": inspect.getdoc(view_website),
+            "parameters": TypeAdapter(view_website).json_schema(),
         }
     }
 ]
 
 # https://platform.openai.com/api-keys
 client = OpenAI(
-    api_key='sk-proj-XXXX',
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url="https://api.groq.com/openai/v1",
 )
-COMPLETION_MODEL = "gpt-4o-mini"
+COMPLETION_MODEL = "gemma2-9b-it"
 
-messages = [{"role": "user", "content": "Thời tiết ở Hà Nội hôm nay thế nào?"}]
+messages = [{"role": "user", "content": "Tóm tắt nội dung trang web https://tuoitre.vn/cac-nha-khoa-hoc-nga-bao-tu-manh-nhat-20-nam-sap-do-bo-trai-dat-2024051020334196.htm"}]
 
 print("Bước 1: Gửi message lên cho LLM")
 pprint(messages)
@@ -90,20 +62,18 @@ tool_call = response.choices[0].message.tool_calls[0]
 pprint(tool_call)
 arguments = json.loads(tool_call.function.arguments)
 
-print("Bước 4: Chạy function get_current_weather ở máy mình")
+print("Bước 4: Chạy function view_website ở máy mình")
 
-if tool_call.function.name == 'get_current_weather':
-    weather_result = get_current_weather(
-        arguments.get('location'), arguments.get('unit'))
-    # Hoặc code này cũng tương tự
-    # weather_result = get_current_weather(**arguments)
-    print(f"Kết quả bước 4: {weather_result}")
+if tool_call.function.name == 'view_website':
+    website_content = view_website(
+        arguments.get('url'))
+    print(f"Kết quả bước 4: {website_content}")
 
     print("Bước 5: Gửi kết quả lên cho LLM")
     messages.append(response.choices[0].message)
     messages.append({
         "role": "tool",
-        "content": weather_result,
+        "content": website_content,
         "tool_call_id": tool_call.id
     })
 
